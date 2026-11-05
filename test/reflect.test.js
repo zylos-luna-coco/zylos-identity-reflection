@@ -225,7 +225,7 @@ test('fetch caps correctly with non-contiguous IDs (gaps)', () => {
   assert.match(result.conversations, /--begin 50 --end 200/);
 });
 
-test('fetch cap is bounded by latestId (no rows beyond snapshot)', () => {
+test('fetch window after the cursor stays within the latest id snapshot', () => {
   const dir = tmpDir();
   const dataDir = path.join(dir, 'data');
   const rows = Array.from({ length: 10 }, (_, i) => ({
@@ -240,16 +240,45 @@ test('fetch cap is bounded by latestId (no rows beyond snapshot)', () => {
   const result = JSON.parse(runNode(REFLECT, ['fetch'], { ZYLOS_DATA_DIR: dataDir }));
 
   assert.equal(result.status, 'ready');
-  assert.equal(result.begin_id, 6);
-  assert.equal(result.end_id, 10);
+  assert.equal(result.begin_id, 4);
+  assert.equal(result.end_id, 8);
   assert.equal(result.count, 5);
   assert.ok(result.begin_id <= result.end_id);
-  assert.match(result.conversations, /--begin 6 --end 10/);
+  assert.match(result.conversations, /--begin 4 --end 8/);
 
   runSqlite(dbPath, `INSERT INTO conversations (direction, channel, endpoint_id, content) VALUES ('in', 'tg', '1', 'late-arrival');`);
 
   const result2 = JSON.parse(runNode(REFLECT, ['fetch'], { ZYLOS_DATA_DIR: dataDir }));
   assert.ok(result2.begin_id <= result2.end_id);
+});
+
+test('fetch catches up a backlog larger than max_conversations without skipping any', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, 'data');
+  const ids = [11, 12, 15, 20, 21, 30, 31, 40];
+  const dbPath = createC4Db(dir, [
+    { id: 10, direction: 'in', channel: 'tg', endpoint: '1', content: 'already reflected' },
+    ...ids.map((id) => ({ id, direction: 'in', channel: 'tg', endpoint: '1', content: `msg${id}` }))
+  ]);
+  const fetchPath = createFakeFetch(dir);
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'state.json'), JSON.stringify({ last_processed_id: 10, last_observed_id: 10 }));
+  writeConfig(dataDir, { min_conversations: 1, max_conversations: 3, c4_db: dbPath, c4_fetch_script: fetchPath });
+  const env = { HOME: dir, ZYLOS_DIR: path.join(dir, 'zylos'), ZYLOS_DATA_DIR: dataDir };
+
+  const windows = [];
+  for (let run = 0; run < ids.length; run += 1) {
+    const result = JSON.parse(runNode(REFLECT, ['fetch'], env));
+    if (result.status !== 'ready') break;
+    windows.push([result.begin_id, result.end_id, result.count]);
+    assert.match(result.conversations, new RegExp(`--begin ${result.begin_id} --end ${result.end_id}$`, 'm'));
+    runNode(REFLECT, ['commit', '--result', 'no_change', '--end-id', String(result.end_id)], env);
+  }
+
+  assert.deepEqual(windows, [[11, 15, 3], [20, 30, 3], [31, 40, 2]]);
+  const state = JSON.parse(fs.readFileSync(path.join(dataDir, 'state.json'), 'utf8'));
+  assert.equal(state.last_processed_id, 40);
 });
 
 test('commit skip records observation without advancing processed cursor', () => {
