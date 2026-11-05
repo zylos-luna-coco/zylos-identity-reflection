@@ -13,6 +13,7 @@ const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const RUN_LOG_PATH = path.join(LOG_DIR, 'runs.jsonl');
+const SUBPROCESS_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 const DEFAULT_CONFIG = {
   enabled: true,
@@ -99,8 +100,10 @@ function normalizeId(value, fallback = null) {
 }
 
 function outputJson(value, exitCode = 0) {
+  // Let the process end on its own: process.exit() here drops whatever a pipe
+  // has not yet accepted, so callers must return after calling this.
+  process.exitCode = exitCode;
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-  process.exit(exitCode);
 }
 
 function outputError(message, details = undefined) {
@@ -108,7 +111,11 @@ function outputError(message, details = undefined) {
 }
 
 function run(command, args) {
-  return execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync(command, args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: SUBPROCESS_MAX_BUFFER_BYTES
+  });
 }
 
 function getLatestConversationId(c4DbPath) {
@@ -177,6 +184,7 @@ function commandFetch() {
       end_id: state.last_processed_id,
       count: 0
     });
+    return;
   }
 
   const c4DbPath = expandHome(config.c4_db);
@@ -215,6 +223,7 @@ function commandFetch() {
 
   if (base.status === 'skip') {
     outputJson(base);
+    return;
   }
 
   outputJson({ ...base, conversations: fetchTranscript(c4FetchScript, beginId, endId) });
@@ -271,12 +280,16 @@ function commandCommit(args) {
 function main() {
   const { command, args } = parseArgs(process.argv.slice(2));
   try {
-    if (command === 'fetch') commandFetch();
-    if (command === 'commit') commandCommit(args);
-    outputJson({
-      status: 'error',
-      error: 'Usage: reflect.js fetch | reflect.js commit --result <skip|no_change|updated> [--end-id N] [--observed-end-id N]'
-    }, 1);
+    if (command === 'fetch') {
+      commandFetch();
+    } else if (command === 'commit') {
+      commandCommit(args);
+    } else {
+      outputJson({
+        status: 'error',
+        error: 'Usage: reflect.js fetch | reflect.js commit --result <skip|no_change|updated> [--end-id N] [--observed-end-id N]'
+      }, 1);
+    }
   } catch (err) {
     outputError(err.message);
   }

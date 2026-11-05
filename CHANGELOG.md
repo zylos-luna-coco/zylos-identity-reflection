@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `reflect.js fetch` no longer fails with `ENOBUFS` when the transcript exceeds 1 MiB: subprocess output is now buffered up to 64 MiB (#8).
+- `reflect.js` no longer truncates its JSON output when stdout is a pipe or socket: it ends by letting stdout drain instead of calling `process.exit()`. Before this, a large `fetch` envelope could be cut off with exit code 0.
+
+### Changed
+- `npm test` names its test files explicitly instead of relying on the default `node --test` scan.
+
 ## [0.1.3] - 2026-06-05
 
 ### Added

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -121,6 +121,65 @@ test('fetch returns ready envelope with transcript at threshold', () => {
   assert.equal(result.end_id, 2);
   assert.equal(result.count, 2);
   assert.match(result.conversations, /--begin 1 --end 2/);
+});
+
+// Runs the real CLI against a temporary C4 database and a stand-in c4-fetch.js;
+// HOME, ZYLOS_DIR and ZYLOS_DATA_DIR all point into the temporary directory.
+// Covers: a transcript over Node's 1 MiB default passes through run() and the whole
+// JSON envelope reaches a reader on a pipe-like stdout. Does not cover the real c4-fetch.js or the upper
+// buffer limit. Run it when run(), fetchTranscript() or the fetch output changes;
+// it needs only node and sqlite3, so there is no reason to skip it.
+test('fetch returns a transcript larger than 1 MiB intact', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, 'data');
+  const dbPath = createC4Db(dir, [
+    { direction: 'in', channel: 'telegram', endpoint: '1', content: 'hello' },
+    { direction: 'out', channel: 'telegram', endpoint: '1', content: 'hi' }
+  ]);
+  const transcriptBytes = 2 * 1024 * 1024;
+  const endMarker = '[end of transcript]';
+  const fetchPath = path.join(dir, 'c4-fetch.js');
+  fs.writeFileSync(
+    fetchPath,
+    `process.stdout.write('x'.repeat(${transcriptBytes - endMarker.length}) + ${JSON.stringify(endMarker)});\n`
+  );
+  writeConfig(dataDir, { min_conversations: 2, c4_db: dbPath, c4_fetch_script: fetchPath });
+
+  const child = spawnSync(process.execPath, [REFLECT, 'fetch'], {
+    cwd: ROOT,
+    env: { ...process.env, HOME: dir, ZYLOS_DIR: path.join(dir, 'zylos'), ZYLOS_DATA_DIR: dataDir },
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+    timeout: 30_000
+  });
+
+  assert.equal(child.status, 0, child.stdout.slice(0, 500));
+  const result = JSON.parse(child.stdout);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.conversations.length, transcriptBytes);
+  assert.ok(result.conversations.endsWith(endMarker));
+});
+
+test('fetch reports disabled as a single skip envelope', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, 'data');
+  writeConfig(dataDir, { enabled: false, c4_fetch_script: path.join(dir, 'missing-c4-fetch.js') });
+
+  const result = JSON.parse(runNode(REFLECT, ['fetch'], { HOME: dir, ZYLOS_DIR: path.join(dir, 'zylos'), ZYLOS_DATA_DIR: dataDir }));
+
+  assert.equal(result.status, 'skip');
+  assert.equal(result.reason, 'disabled');
+});
+
+test('unknown command reports usage and exits non-zero', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const failure = runNodeFailure(REFLECT, ['unknown'], { HOME: dir, ZYLOS_DIR: path.join(dir, 'zylos'), ZYLOS_DATA_DIR: path.join(dir, 'data') });
+
+  assert.equal(failure.status, 1);
+  assert.match(JSON.parse(failure.stdout).error, /^Usage:/);
 });
 
 test('fetch caps window to max_conversations on first run', () => {
