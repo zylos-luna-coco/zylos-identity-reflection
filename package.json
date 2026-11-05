@@ -8,7 +8,7 @@
     "zylos-identity-reflection": "scripts/reflect.js"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "check": "node --check scripts/reflect.js && node --check hooks/post-install.js && node --check hooks/pre-upgrade.js && node --check hooks/post-upgrade.js"
   },
   "homepage": "https://github.com/zz-howard/zylos-identity-reflection#readme",
