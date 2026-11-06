@@ -47,10 +47,14 @@ integration baseline is Core `e3eaf512`, currently unreleased. Use the matching
 Core `c4-fetch.js` for `c4_fetch_script`; its range output already projects
 complete messages before formatting. The component checks the public
 `cli/lib/content-projection.js` export through the configured fetch script's
-Core resolver once before fetching a transcript. If it cannot load
-`projectC4Content`, the fetch command fails with a JSON error, without reading
+Core resolver once before fetching a transcript. If the public module cannot
+be loaded, the fetch command fails with a JSON error, without reading
 raw conversation bodies or advancing reflection state. Below-threshold and
 disabled runs still skip without fetching history.
+
+Complete the matching comm-bridge skills synchronization when upgrading Core.
+A new Core package with stale skills is not sufficient: this check verifies
+package entry availability, not whether the installed skills were synchronized.
 
 The component's own SQLite queries read only IDs and counts. Conversation text
 comes solely from the projected fetch output and is passed unchanged to the

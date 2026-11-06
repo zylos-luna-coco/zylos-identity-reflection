@@ -151,8 +151,7 @@ async function fetchTranscript(c4FetchScript, beginId, endId) {
     const loader = path.join(path.dirname(fs.realpathSync(c4FetchScript)), 'core-config-loader.js');
     const { resolveCoreConfigModule } = await import(pathToFileURL(loader).href);
     const entry = path.join(path.dirname(resolveCoreConfigModule()), 'content-projection.js');
-    const { projectC4Content } = await import(pathToFileURL(entry).href);
-    if (typeof projectC4Content !== 'function') throw new Error('Missing public projector');
+    await import(pathToFileURL(entry).href);
   } catch {
     throw new Error('Projected C4 history requires a Core version with Dashboard conversation projection (minimum version TBD): cannot load public cli/lib/content-projection.js for the configured c4-fetch.js. No history was fetched.');
   }
