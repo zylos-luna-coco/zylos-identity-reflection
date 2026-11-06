@@ -133,11 +133,16 @@ function getConversationCount(c4DbPath, beginId, endId) {
   return normalizeId(raw || '0', 0);
 }
 
-function getCappedBeginId(c4DbPath, afterId, endId, limit) {
-  const sql = `SELECT MIN(id) FROM (SELECT id FROM conversations WHERE id > ${afterId} AND id <= ${endId} ORDER BY id DESC LIMIT ${limit});`;
-  const raw = run('sqlite3', [c4DbPath, sql]).trim();
-  if (!raw || raw === '') return null;
-  return normalizeId(raw, null);
+// The fetch window holds at most `limit` conversations after the cursor. Normal
+// runs take the oldest ones so a large backlog is caught up over several runs
+// instead of being skipped. A first run (cursor 0) takes the newest ones so a
+// fresh install does not start from the beginning of the history.
+function getFetchWindow(c4DbPath, afterId, latestId, limit) {
+  const order = afterId === 0 ? 'DESC' : 'ASC';
+  const sql = `SELECT MIN(id), MAX(id) FROM (SELECT id FROM conversations WHERE id > ${afterId} AND id <= ${latestId} ORDER BY id ${order} LIMIT ${limit});`;
+  const [minRaw, maxRaw] = run('sqlite3', [c4DbPath, sql]).trim().split('|');
+  if (!minRaw || !maxRaw) return null;
+  return { beginId: normalizeId(minRaw), endId: normalizeId(maxRaw) };
 }
 
 function fetchTranscript(c4FetchScript, beginId, endId) {
@@ -195,12 +200,12 @@ function commandFetch() {
 
   const latestId = getLatestConversationId(c4DbPath);
   let beginId = state.last_processed_id + 1;
-  const endId = latestId;
+  let endId = latestId;
   const maxConversations = Number(config.max_conversations ?? DEFAULT_CONFIG.max_conversations);
   if (Number.isSafeInteger(maxConversations) && maxConversations > 0) {
-    const cappedId = getCappedBeginId(c4DbPath, state.last_processed_id, endId, maxConversations);
-    if (cappedId !== null) {
-      beginId = cappedId;
+    const window = getFetchWindow(c4DbPath, state.last_processed_id, latestId, maxConversations);
+    if (window !== null) {
+      ({ beginId, endId } = window);
     }
   }
   const count = getConversationCount(c4DbPath, beginId, endId);
