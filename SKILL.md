@@ -39,6 +39,25 @@ Use this skill when a scheduled `identity-reflection` task arrives, or when the 
 
 Identity reflection exists to help the owner and team get things done across sessions. It is not free-form self-improvement. It maintains accurate self-knowledge only where that self-knowledge improves future work.
 
+## Core Requirement
+
+Requires a **Core version containing Dashboard conversation projection**
+(minimum release version: **TBD**, to be filled in at Core release). The
+integration baseline is Core `e3eaf512`, currently unreleased. Use the matching
+Core `c4-fetch.js` for `c4_fetch_script`; its range output already projects
+complete messages before formatting. The component checks the public
+`cli/lib/content-projection.js` export through the configured fetch script's
+Core resolver once before fetching a transcript. If it cannot load
+`projectC4Content`, the fetch command fails with a JSON error, without reading
+raw conversation bodies or advancing reflection state. Below-threshold and
+disabled runs still skip without fetching history.
+
+The component's own SQLite queries read only IDs and counts. Conversation text
+comes solely from the projected fetch output and is passed unchanged to the
+reflection agent as `conversations`. There is no local envelope parser,
+additional configuration switch, or raw-text fallback. Core package resolution
+uses the existing `ZYLOS_PACKAGE_ROOT`, checkout, PATH and npm lookup rules.
+
 ## Execution Model
 
 Reflection must run in a background subagent. The main session must not do the conversation analysis inline.

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const HOME = os.homedir();
 const ZYLOS_DIR = process.env.ZYLOS_DIR || path.join(HOME, 'zylos');
@@ -145,7 +146,18 @@ function getFetchWindow(c4DbPath, afterId, latestId, limit) {
   return { beginId: normalizeId(minRaw), endId: normalizeId(maxRaw) };
 }
 
-function fetchTranscript(c4FetchScript, beginId, endId) {
+async function fetchTranscript(c4FetchScript, beginId, endId) {
+  try {
+    const loader = path.join(path.dirname(fs.realpathSync(c4FetchScript)), 'core-config-loader.js');
+    const { resolveCoreConfigModule } = await import(pathToFileURL(loader).href);
+    const entry = path.join(path.dirname(resolveCoreConfigModule()), 'content-projection.js');
+    const { projectC4Content } = await import(pathToFileURL(entry).href);
+    if (typeof projectC4Content !== 'function') throw new Error('Missing public projector');
+  } catch {
+    throw new Error('Projected C4 history requires a Core version with Dashboard conversation projection (minimum version TBD): cannot load public cli/lib/content-projection.js for the configured c4-fetch.js. No history was fetched.');
+  }
+  // The configured Core fetch already projects each complete row. Do not
+  // project the transcript again: a legitimate fallback may contain a marker.
   return run('node', [c4FetchScript, '--begin', String(beginId), '--end', String(endId)]);
 }
 
@@ -175,7 +187,7 @@ function parseArgs(argv) {
   return { command, args };
 }
 
-function commandFetch() {
+async function commandFetch() {
   requireSqliteCli();
 
   const config = loadConfig();
@@ -231,7 +243,7 @@ function commandFetch() {
     return;
   }
 
-  outputJson({ ...base, conversations: fetchTranscript(c4FetchScript, beginId, endId) });
+  outputJson({ ...base, conversations: await fetchTranscript(c4FetchScript, beginId, endId) });
 }
 
 function commandCommit(args) {
@@ -282,11 +294,11 @@ function commandCommit(args) {
   });
 }
 
-function main() {
+async function main() {
   const { command, args } = parseArgs(process.argv.slice(2));
   try {
     if (command === 'fetch') {
-      commandFetch();
+      await commandFetch();
     } else if (command === 'commit') {
       commandCommit(args);
     } else {
@@ -300,4 +312,4 @@ function main() {
   }
 }
 
-main();
+await main();

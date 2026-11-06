@@ -31,6 +31,23 @@ On macOS with Homebrew:
 brew install sqlite3
 ```
 
+Requires a **Core version containing Dashboard conversation projection**
+(minimum release version: **TBD**, to be filled in at Core release). The
+integration baseline is Core `e3eaf512`, currently unreleased. Use the matching
+Core `c4-fetch.js` for `c4_fetch_script`; its range output already projects
+complete messages before formatting. The component checks the public
+`cli/lib/content-projection.js` export through the configured fetch script's
+Core resolver once before fetching a transcript. If it cannot load
+`projectC4Content`, the fetch command fails with a JSON error, without reading
+raw conversation bodies or advancing reflection state. Below-threshold and
+disabled runs still skip without fetching history.
+
+The component's own SQLite queries read only IDs and counts. Conversation text
+comes solely from the projected fetch output and is passed unchanged to the
+reflection agent as `conversations`. There is no local envelope parser,
+additional configuration switch, or raw-text fallback. Core package resolution
+uses the existing `ZYLOS_PACKAGE_ROOT`, checkout, PATH and npm lookup rules.
+
 ## Install
 
 ```bash
@@ -110,3 +127,22 @@ Run entries are appended to `logs/runs.jsonl`.
 ## License
 
 [MIT](./LICENSE)
+
+## Projection Tests
+
+Use a Core checkout at `e3eaf512cd11b92d250b03db90fda442133751e1` with its
+existing development dependencies, and an older Core checkout at `6436b3e2`
+without the public projection module. Do not install either into a live instance.
+Keep the component's `v0.1.5` Git tag available for the byte-for-byte baseline.
+Run in temporary HOME, ZYLOS_DIR, PM2_HOME and short TMPDIR directories; the test
+cases create their own private C4 databases beneath TMPDIR and clean them up.
+No model, runtime, PM2, tmux or network is started.
+
+```bash
+ZYLOS_PACKAGE_ROOT=/path/to/core-checkout \
+TEST_LEGACY_CORE_ROOT=/path/to/older-core \
+node --test test/projected-history.test.js
+
+ZYLOS_PACKAGE_ROOT=/path/to/core-checkout \
+node --test --test-name-pattern='^fetch' test/reflect.test.js
+```
