@@ -132,21 +132,27 @@ Run entries are appended to `logs/runs.jsonl`.
 
 [MIT](./LICENSE)
 
-## Projection Tests
+## Tests
 
-Use a Core checkout at `e3eaf512cd11b92d250b03db90fda442133751e1` with its
-existing development dependencies, and an older Core checkout at `6436b3e2`
-without the public projection module. Do not install either into a live instance.
-Keep the component's `v0.1.5` Git tag available for the byte-for-byte baseline.
-Run in temporary HOME, ZYLOS_DIR, PM2_HOME and short TMPDIR directories; the test
-cases create their own private C4 databases beneath TMPDIR and clean them up.
-No model, runtime, PM2, tmux or network is started.
+The default tests are self-contained and need no Core checkout or Core-related
+environment variables. They use a minimal fake Core package and history CLI in
+private temporary directories (the sqlite3 CLI is still required):
+
+```bash
+npm test
+```
+
+The real-Core projection tests are opt-in. Use a Core checkout at
+`e3eaf512cd11b92d250b03db90fda442133751e1` with its existing development
+dependencies, and an older Core checkout at `6436b3e2` without the public
+projection module. Do not install either into a live instance. Keep the
+component's `v0.1.5` Git tag available for the byte-for-byte baseline.
+Run in temporary HOME, ZYLOS_DIR, PM2_HOME and short TMPDIR directories; cases
+create private C4 databases beneath TMPDIR and clean them up. No model,
+runtime, PM2, tmux or network is started.
 
 ```bash
 ZYLOS_PACKAGE_ROOT=/path/to/core-checkout \
 TEST_LEGACY_CORE_ROOT=/path/to/older-core \
-node --test test/projected-history.test.js
-
-ZYLOS_PACKAGE_ROOT=/path/to/core-checkout \
-node --test --test-name-pattern='^fetch' test/reflect.test.js
+npm run test:integration
 ```
