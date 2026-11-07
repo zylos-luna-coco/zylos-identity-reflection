@@ -31,26 +31,11 @@ On macOS with Homebrew:
 brew install sqlite3
 ```
 
-Requires a **Core version containing Dashboard conversation projection**
-(minimum release version: **TBD**, to be filled in at Core release). The
-integration baseline is Core `e3eaf512`, currently unreleased. Use the matching
-Core `c4-fetch.js` for `c4_fetch_script`; its range output already projects
-complete messages before formatting. The component checks the public
-`cli/lib/content-projection.js` export through the configured fetch script's
-Core resolver once before fetching a transcript. If the public module cannot
-be loaded, the fetch command fails with a JSON error, without reading
-raw conversation bodies or advancing reflection state. Below-threshold and
-disabled runs still skip without fetching history.
-
-Complete the matching comm-bridge skills synchronization when upgrading Core.
-A new Core package with stale skills is not sufficient: this check verifies
-package entry availability, not whether the installed skills were synchronized.
-
-The component's own SQLite queries read only IDs and counts. Conversation text
-comes solely from the projected fetch output and is passed unchanged to the
-reflection agent as `conversations`. There is no local envelope parser,
-additional configuration switch, or raw-text fallback. Core package resolution
-uses the existing `ZYLOS_PACKAGE_ROOT`, checkout, PATH and npm lookup rules.
+On Core versions with conversation projection, structured history messages
+appear as readable text. Earlier Core versions already provide plain-text
+history, so reflection works as usual with no minimum Core version requirement.
+The component passes Core fetch output unchanged to the reflection agent; it
+does not project the transcript a second time.
 
 ## Install
 
@@ -135,17 +120,17 @@ Run entries are appended to `logs/runs.jsonl`.
 ## Tests
 
 The default tests are self-contained and need no Core checkout or Core-related
-environment variables. They use a minimal fake Core package and history CLI in
+environment variables. They use a fake history CLI in
 private temporary directories (the sqlite3 CLI is still required):
 
 ```bash
 npm test
 ```
 
-The real-Core projection tests are opt-in. Use a Core checkout at
-`e3eaf512cd11b92d250b03db90fda442133751e1` with its existing development
-dependencies, and an older Core checkout at `6436b3e2` without the public
-projection module. Do not install either into a live instance. Keep the
+The real-Core projection tests are opt-in. Use the current `multi-session/chat` Core checkout with its existing
+development dependencies, and an older Core checkout at `6436b3e2` without the
+public projection module. Both checkouts need their existing Core dependencies.
+The tests import the structured-message prefix from the current Core schema. Do not install either into a live instance. Keep the
 component's `v0.1.5` Git tag available for the byte-for-byte baseline.
 Run in temporary HOME, ZYLOS_DIR, PM2_HOME and short TMPDIR directories; cases
 create private C4 databases beneath TMPDIR and clean them up. No model,

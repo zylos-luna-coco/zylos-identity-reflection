@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFakeCore } from './helpers/core-fixture.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const REFLECT = path.join(ROOT, 'scripts/reflect.js');
@@ -66,7 +65,6 @@ function createC4Db(dir, rows) {
 }
 
 function createFakeFetch(dir) {
-  createFakeCore(dir);
   const fetchPath = path.join(dir, 'c4-fetch.js');
   fs.writeFileSync(fetchPath, `console.log('[Conversations] ' + process.argv.slice(2).join(' '));\n`);
   return fetchPath;
@@ -142,7 +140,6 @@ test('fetch returns a transcript larger than 1 MiB intact', (t) => {
   const transcriptBytes = 2 * 1024 * 1024;
   const endMarker = '[end of transcript]';
   const fetchPath = path.join(dir, 'c4-fetch.js');
-  createFakeCore(dir);
   fs.writeFileSync(
     fetchPath,
     `process.stdout.write('x'.repeat(${transcriptBytes - endMarker.length}) + ${JSON.stringify(endMarker)});\n`

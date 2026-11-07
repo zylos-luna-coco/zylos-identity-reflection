@@ -39,28 +39,13 @@ Use this skill when a scheduled `identity-reflection` task arrives, or when the 
 
 Identity reflection exists to help the owner and team get things done across sessions. It is not free-form self-improvement. It maintains accurate self-knowledge only where that self-knowledge improves future work.
 
-## Core Requirement
+## Core History Compatibility
 
-Requires a **Core version containing Dashboard conversation projection**
-(minimum release version: **TBD**, to be filled in at Core release). The
-integration baseline is Core `e3eaf512`, currently unreleased. Use the matching
-Core `c4-fetch.js` for `c4_fetch_script`; its range output already projects
-complete messages before formatting. The component checks the public
-`cli/lib/content-projection.js` export through the configured fetch script's
-Core resolver once before fetching a transcript. If the public module cannot
-be loaded, the fetch command fails with a JSON error, without reading
-raw conversation bodies or advancing reflection state. Below-threshold and
-disabled runs still skip without fetching history.
-
-Complete the matching comm-bridge skills synchronization when upgrading Core.
-A new Core package with stale skills is not sufficient: this check verifies
-package entry availability, not whether the installed skills were synchronized.
-
-The component's own SQLite queries read only IDs and counts. Conversation text
-comes solely from the projected fetch output and is passed unchanged to the
-reflection agent as `conversations`. There is no local envelope parser,
-additional configuration switch, or raw-text fallback. Core package resolution
-uses the existing `ZYLOS_PACKAGE_ROOT`, checkout, PATH and npm lookup rules.
+On Core versions with conversation projection, structured history messages
+appear as readable text. Earlier Core versions already provide plain-text
+history, so reflection works as usual with no minimum Core version requirement.
+The component passes Core fetch output unchanged to the reflection agent; it
+does not project the transcript a second time.
 
 ## Execution Model
 

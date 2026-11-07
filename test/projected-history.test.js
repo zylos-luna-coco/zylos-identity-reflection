@@ -3,15 +3,15 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { coreRoot } from './helpers/core-fixture.js';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const REFLECT = path.join(ROOT, 'scripts/reflect.js');
 const CORE = coreRoot();
-assert.equal(execFileSync('git', ['-C', CORE, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-  'e3eaf512cd11b92d250b03db90fda442133751e1', 'Use the fixed, unreleased Core checkout');
 const CORE_SCRIPTS = path.join(CORE, 'skills/comm-bridge/scripts');
+const { CONTENT_PREFIX } = await import(pathToFileURL(path.join(CORE_SCRIPTS, 'c4-content-schema.js')).href);
 const protocol = JSON.parse(fs.readFileSync(path.join(CORE, 'test/fixtures/c4-content-protocol.json'), 'utf8'));
 const quote = value => "'" + value.replaceAll("'", "''") + "'";
 const hidden = 'HOST_PRIVATE_PAYLOAD_SENTINEL';
@@ -76,12 +76,12 @@ test('reflection history contains only projected text for both directions and ke
   const f = fixture(t);
   const envelope = structuredClone(protocol.valid.find(x => x.name === 'markdown').envelope);
   envelope.fallbackText = 'visible reflection summary'; envelope.blocks[0].data.text = hidden;
-  const encode = x => '[C4-CONTENT]\n' + JSON.stringify(x);
+  const encode = x => CONTENT_PREFIX + JSON.stringify(x);
   const long = { ...envelope, messageId: 'long_history', blocks: [{ ...envelope.blocks[0], data: { text: hidden + 'x'.repeat(20000) } }] };
-  const nested = { ...envelope, messageId: 'nested_history', fallbackText: '[C4-CONTENT]\nliteral fallback' };
+  const nested = { ...envelope, messageId: 'nested_history', fallbackText: CONTENT_PREFIX + 'literal fallback' };
   const answer = protocol.valid.find(x => x.name === 'answer_single_select').content;
   const plain = 'ordinary JSON {"ok":true}\nUnicode 中🚀 and \\ slash';
-  const rows = f.seed([encode(envelope), '[C4-CONTENT]\n{"private":"' + hidden + '"', encode(long), plain, encode(nested), answer]);
+  const rows = f.seed([encode(envelope), CONTENT_PREFIX + '{"private":"' + hidden + '"', encode(long), plain, encode(nested), answer]);
   const before = f.sql('SELECT id,hex(content) FROM conversations ORDER BY id;');
   const { result, output } = ready(f);
   assert.equal(result.count, rows.length);
@@ -95,7 +95,7 @@ test('reflection history contains only projected text for both directions and ke
     if (row.content.includes('"private"')) assert.ok(result.conversations.includes(`[C4 content invalid; c4_id=${row.id}]`));
     else if (row.content === plain) assert.ok(result.conversations.includes(plain));
     else {
-      const value = JSON.parse(row.content.slice('[C4-CONTENT]\n'.length));
+      const value = JSON.parse(row.content.slice(CONTENT_PREFIX.length));
       const interrupt = value.interruptId === undefined ? '' : ` interruptId=${value.interruptId}`;
       assert.ok(result.conversations.includes(`${value.fallbackText}\n[C4 messageId=${value.messageId}${interrupt}; c4_id=${row.id}]`));
       assert.equal(result.conversations.includes(row.content), false);
@@ -118,42 +118,25 @@ test('ordinary reflection payload is byte identical to the previous component re
   assert.equal(ready(f).output, ready(f, baseline).output);
 });
 
-// Integration: real historical Core resolver without a public projection export.
-// It must fail before invoking legacy fetch or returning any body. Run for Core
-// prerequisite/resolution changes; skip unrelated policy/commit changes. Private
-// DB and unchanged reflection cursor; no raw fallback, runtime or network.
-test('a Core without the public projection entry stops reflection before legacy history fetch', t => {
-  const f = fixture(t); f.seed([hidden]);
+// Integration: real older Core without a public projection module reads ordinary
+// history normally. Run for Core compatibility/history handoff changes; skip
+// unrelated hooks. Same private DB/env and bounded children as above; compare
+// the full output to the unchanged main baseline with no model or services.
+test('a Core without projection reads plain history byte identically to the main baseline', t => {
+  const f = fixture(t);
+  f.seed(['ordinary legacy history', '{"ordinary":"JSON"}\n中文🚀', 'quotes \' and \\ slash']);
   const legacy = fs.realpathSync(process.env.TEST_LEGACY_CORE_ROOT);
   assert.equal(fs.existsSync(path.join(legacy, 'cli/lib/content-projection.js')), false);
   f.configure({ c4_fetch_script: path.join(legacy, 'skills/comm-bridge/scripts/c4-fetch.js') });
+  const baseline = path.join(f.root, 'baseline-reflect.js');
+  fs.writeFileSync(path.join(f.root, 'package.json'), '{"type":"module"}');
+  fs.writeFileSync(baseline, execFileSync('git', ['show', 'v0.1.5:scripts/reflect.js'], { cwd: ROOT, encoding: 'utf8', timeout: 5000 }));
   const state = '{"last_processed_id":0,"last_observed_id":0}\n';
   fs.writeFileSync(path.join(f.env.ZYLOS_DATA_DIR, 'state.json'), state);
-  const child = f.invoke(REFLECT, ['fetch'], { ZYLOS_PACKAGE_ROOT: legacy });
-  assert.equal(child.status, 1);
-  const result = JSON.parse(child.stdout);
-  assert.equal(result.status, 'error');
-  assert.match(result.error, /Projected C4 history requires a Core version with Dashboard conversation projection/);
-  assert.match(result.error, /cli\/lib\/content-projection\.js/);
-  assert.equal(result.conversations, undefined);
-  assert.equal(child.stdout.includes(hidden), false);
+  f.env.ZYLOS_PACKAGE_ROOT = legacy;
+  const current = ready(f), previous = ready(f, baseline);
+  assert.equal(current.output, previous.output);
+  assert.equal(current.result.count, 6);
+  assert.ok(current.result.conversations.includes('ordinary legacy history'));
   assert.equal(fs.readFileSync(path.join(f.env.ZYLOS_DATA_DIR, 'state.json'), 'utf8'), state);
-});
-
-// Integration: absent loader cannot fall back to an arbitrary configured fetch.
-// Run for availability checks; skip unrelated metadata queries. The sentinel
-// fixture never executes; uses the same private env and process bounds above.
-test('an unresolved Core loader never calls the configured raw fetch', t => {
-  const f = fixture(t); f.seed([hidden]);
-  const marker = path.join(f.root, 'raw-fetch-called');
-  const script = path.join(f.root, 'raw-fetch.js');
-  fs.writeFileSync(path.join(f.root, 'package.json'), '{"type":"module"}');
-  fs.writeFileSync(script, `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, 'called'); console.log(${JSON.stringify(hidden)});`);
-  f.configure({ c4_fetch_script: script });
-  const child = f.invoke(REFLECT, ['fetch']);
-  assert.equal(child.status, 1);
-  assert.equal(JSON.parse(child.stdout).status, 'error');
-  assert.match(JSON.parse(child.stdout).error, /No history was fetched/);
-  assert.equal(child.stdout.includes(hidden), false);
-  assert.equal(fs.existsSync(marker), false);
 });
